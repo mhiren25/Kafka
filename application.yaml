@@ -1,0 +1,142 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: instrument-aggregation-service
+  
+  datasource:
+    url: jdbc:oracle:thin:@${ORACLE_HOST:localhost}:${ORACLE_PORT:1521}:${ORACLE_SID:ORCL}
+    username: ${ORACLE_USER:instruments_user}
+    password: ${ORACLE_PASSWORD:changeme}
+    driver-class-name: oracle.jdbc.OracleDriver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: InstrumentHikariPool
+  
+  jpa:
+    database-platform: org.hibernate.dialect.Oracle12cDialect
+    hibernate:
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+        jdbc:
+          batch_size: 25
+          fetch_size: 50
+        order_inserts: true
+        order_updates: true
+        generate_statistics: false
+    show-sql: false
+  
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: instrument-aggregation-group
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.example.instrument.*"
+        spring.json.use.type.headers: false
+        spring.json.value.default.type: com.example.instrument.dto.InstrumentUpdateMessage
+        max.poll.records: 100
+        max.poll.interval.ms: 300000
+        session.timeout.ms: 30000
+        heartbeat.interval.ms: 10000
+        connections.max.idle.ms: 540000
+        request.timeout.ms: 60000
+    
+    listener:
+      ack-mode: manual
+      concurrency: 3
+      poll-timeout: 3000
+    
+    retry:
+      backoff:
+        initial-interval: 2000
+        max-interval: 30000
+        multiplier: 2.0
+      max-attempts: 5
+
+# Application-specific configuration
+instrument:
+  topics:
+    main: instrument.main
+    supplementary:
+      - instrument.pricing
+      - instrument.quantity
+      - instrument.issuer
+      - instrument.sector
+      - instrument.risk
+      - instrument.maturity
+      - instrument.coupon
+      - instrument.market
+  
+  aggregation:
+    wait-window-ms: 300
+    max-pending-size: 10000
+    cleanup-interval-ms: 60000
+    stale-threshold-ms: 300000
+  
+  processing:
+    queue-capacity: 5000
+    partition-count: 8
+    thread-pool-size: 8
+    thread-name-prefix: instrument-writer-
+    await-termination-seconds: 60
+  
+  rest:
+    base-url: ${REST_API_BASE_URL:http://localhost:8081/api/v1}
+    endpoints:
+      main: /instruments/{instrumentId}
+      pricing: /instruments/{instrumentId}/pricing
+      quantity: /instruments/{instrumentId}/quantity
+      issuer: /instruments/{instrumentId}/issuer
+      sector: /instruments/{instrumentId}/sector
+      risk: /instruments/{instrumentId}/risk
+      maturity: /instruments/{instrumentId}/maturity
+      coupon: /instruments/{instrumentId}/coupon
+      market: /instruments/{instrumentId}/market
+    timeout-ms: 5000
+    max-retries: 3
+    retry-backoff-ms: 1000
+  
+  version-validation:
+    enabled: true
+    log-skipped: true
+
+# Actuator & Metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+  health:
+    kafka:
+      enabled: true
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.example.instrument: DEBUG
+    org.springframework.kafka: INFO
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+  pattern:
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","thread":"%thread","logger":"%logger{36}","message":"%msg","correlation_id":"%X{correlationId}"}%n'
