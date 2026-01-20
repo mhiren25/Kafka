@@ -1,11 +1,10 @@
 package com.example.instrument.config;
 
-import com.example.instrument.dto.InstrumentUpdateMessage;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,20 +15,21 @@ import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DefaultErrorHandler;
-import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
-import org.springframework.kafka.support.serializer.JsonDeserializer;
-import org.springframework.util.backoff.BackOff;
 import org.springframework.util.backoff.ExponentialBackOff;
 
 import java.util.HashMap;
 import java.util.Map;
 
+/**
+ * Kafka configuration for consuming XML messages as Strings
+ * Each topic receives XML which will be transformed using vendor transformers
+ */
 @Configuration
 @EnableKafka
-@RequiredArgsConstructor
-@Slf4j
 public class KafkaConsumerConfig {
-
+    
+    private static final Logger log = LoggerFactory.getLogger(KafkaConsumerConfig.class);
+    
     private final MeterRegistry meterRegistry;
 
     @Value("${spring.kafka.bootstrap-servers}")
@@ -53,8 +53,16 @@ public class KafkaConsumerConfig {
     @Value("${spring.kafka.retry.max-attempts}")
     private Integer maxAttempts;
 
+    public KafkaConsumerConfig(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
+
+    /**
+     * Base consumer factory configuration for XML (String) messages
+     * All topics receive XML strings that need to be transformed
+     */
     @Bean
-    public ConsumerFactory<String, InstrumentUpdateMessage> consumerFactory() {
+    public ConsumerFactory<String, String> xmlConsumerFactory() {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
@@ -67,38 +75,34 @@ public class KafkaConsumerConfig {
         props.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 60000);
         props.put(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG, 540000);
         
-        // Key deserializer
+        // Both key and value are strings (XML content)
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         
-        // Value deserializer with error handling
-        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
-        props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, JsonDeserializer.class);
-        props.put(JsonDeserializer.VALUE_DEFAULT_TYPE, InstrumentUpdateMessage.class.getName());
-        props.put(JsonDeserializer.TRUSTED_PACKAGES, "com.example.instrument.*");
-        props.put(JsonDeserializer.USE_TYPE_INFO_HEADERS, false);
-
         return new DefaultKafkaConsumerFactory<>(props);
     }
 
+    /**
+     * Single container factory for all XML-based topics
+     * The transformation from XML to domain objects happens in the listener
+     */
     @Bean
-    public ConcurrentKafkaListenerContainerFactory<String, InstrumentUpdateMessage> 
-            kafkaListenerContainerFactory(ConsumerFactory<String, InstrumentUpdateMessage> consumerFactory) {
+    public ConcurrentKafkaListenerContainerFactory<String, String> kafkaListenerContainerFactory(
+            ConsumerFactory<String, String> xmlConsumerFactory) {
         
-        ConcurrentKafkaListenerContainerFactory<String, InstrumentUpdateMessage> factory =
+        ConcurrentKafkaListenerContainerFactory<String, String> factory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         
-        factory.setConsumerFactory(consumerFactory);
+        factory.setConsumerFactory(xmlConsumerFactory);
         factory.setConcurrency(3);
         factory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL);
         factory.getContainerProperties().setPollTimeout(3000);
-        
-        // Error handling with exponential backoff
         factory.setCommonErrorHandler(errorHandler());
-        
-        // Consumer rebalance listener for metrics
         factory.getContainerProperties().setConsumerRebalanceListener(
             new MetricsConsumerRebalanceListener(meterRegistry)
         );
+        
+        log.info("Initialized Kafka listener container factory for XML messages");
         
         return factory;
     }
@@ -113,17 +117,13 @@ public class KafkaConsumerConfig {
         
         DefaultErrorHandler errorHandler = new DefaultErrorHandler(
             (record, exception) -> {
-                // After all retries exhausted
                 log.error("Retry exhausted for record: topic={}, partition={}, offset={}", 
                     record.topic(), record.partition(), record.offset(), exception);
                 
-                // Emit Prometheus alert metric
                 meterRegistry.counter("kafka.consumer.retry.exhausted",
                     "topic", record.topic(),
                     "partition", String.valueOf(record.partition())
                 ).increment();
-                
-                // Record could be sent to DLQ here if configured
             },
             backOff
         );
