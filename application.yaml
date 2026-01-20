@@ -43,11 +43,8 @@ spring:
       auto-offset-reset: earliest
       enable-auto-commit: false
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
-        spring.json.trusted.packages: "com.example.instrument.*"
-        spring.json.use.type.headers: false
-        spring.json.value.default.type: com.example.instrument.dto.InstrumentUpdateMessage
         max.poll.records: 100
         max.poll.interval.ms: 300000
         session.timeout.ms: 30000
@@ -69,47 +66,48 @@ spring:
 
 # Application-specific configuration
 instrument:
+  # Kafka topics
   topics:
-    main: instrument.main
-    supplementary:
-      - instrument.pricing
-      - instrument.quantity
-      - instrument.issuer
-      - instrument.sector
-      - instrument.risk
-      - instrument.maturity
-      - instrument.coupon
-      - instrument.market
+    equity-issue: instrument.equity.issue
+    equity-trading-line: instrument.equity.trading-line
+    bond-issue: instrument.bond.issue
+    bond-trading-line: instrument.bond.trading-line
+    structured-product-issue: instrument.structured-product.issue
+    structured-product-trading-line: instrument.structured-product.trading-line
+    warrant-issue: instrument.warrant.issue
+    warrant-trading-line: instrument.warrant.trading-line
   
-  aggregation:
-    wait-window-ms: 300
-    max-pending-size: 10000
-    cleanup-interval-ms: 60000
-    stale-threshold-ms: 300000
+  # Pre-transform queue configuration
+  pre-transform-queue:
+    capacity: 50000
+    offer-timeout-ms: 5000
   
-  processing:
-    queue-capacity: 5000
+  # Transformer worker pool configuration
+  transformer:
+    worker-count: 16
+    poll-timeout-ms: 1000
+    shutdown-timeout-seconds: 30
+  
+  # Writer queue configuration (partitioned)
+  writer-queue:
     partition-count: 8
-    thread-pool-size: 8
-    thread-name-prefix: instrument-writer-
-    await-termination-seconds: 60
+    capacity-per-partition: 5000
+    offer-timeout-ms: 5000
+    shutdown-timeout-seconds: 60
   
+  # REST endpoints (for manual reload)
   rest:
     base-url: ${REST_API_BASE_URL:http://localhost:8081/api/v1}
     endpoints:
-      main: /instruments/{instrumentId}
-      pricing: /instruments/{instrumentId}/pricing
-      quantity: /instruments/{instrumentId}/quantity
-      issuer: /instruments/{instrumentId}/issuer
-      sector: /instruments/{instrumentId}/sector
-      risk: /instruments/{instrumentId}/risk
-      maturity: /instruments/{instrumentId}/maturity
-      coupon: /instruments/{instrumentId}/coupon
-      market: /instruments/{instrumentId}/market
+      equity-search: /equity/search
+      bond-search: /bond/search
+      structured-product-search: /structured-product/search
+      warrant-search: /warrant/search
     timeout-ms: 5000
     max-retries: 3
     retry-backoff-ms: 1000
   
+  # Version validation
   version-validation:
     enabled: true
     log-skipped: true
@@ -138,5 +136,6 @@ logging:
     org.springframework.kafka: INFO
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    AUDIT: INFO
   pattern:
-    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","thread":"%thread","logger":"%logger{36}","message":"%msg","correlation_id":"%X{correlationId}"}%n'
+    console: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%level","thread":"%thread","logger":"%logger{36}","message":"%msg","correlation_id":"%X{correlationId}","instrument_id":"%X{instrumentId}","version":"%X{version}"}%n'
