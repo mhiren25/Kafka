@@ -1,173 +1,114 @@
 package com.example.instrument.listener;
 
-import com.example.instrument.dto.InstrumentUpdateMessage;
-import com.example.instrument.service.InstrumentAggregationService;
+import com.example.instrument.dto.RawMessage;
+import com.example.instrument.service.PreTransformQueue;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.slf4j.MDC;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
-import java.util.UUID;
-
+/**
+ * Single Kafka listener that handles ALL instrument topics
+ * Uses topic name from ConsumerRecord metadata to determine message type
+ */
 @Component
-@RequiredArgsConstructor
-@Slf4j
-public class InstrumentKafkaListeners {
-
-    private final InstrumentAggregationService aggregationService;
+public class SingleInstrumentKafkaListener {
+    
+    private static final Logger log = LoggerFactory.getLogger(SingleInstrumentKafkaListener.class);
+    
+    private final PreTransformQueue preTransformQueue;
     private final MeterRegistry meterRegistry;
 
+    public SingleInstrumentKafkaListener(
+            PreTransformQueue preTransformQueue,
+            MeterRegistry meterRegistry) {
+        this.preTransformQueue = preTransformQueue;
+        this.meterRegistry = meterRegistry;
+    }
+
+    /**
+     * Single listener for all 8 instrument topics
+     * Topics: equity.issue, equity.trading-line, bond.issue, bond.trading-line,
+     *         structured-product.issue, structured-product.trading-line,
+     *         warrant.issue, warrant.trading-line
+     */
     @KafkaListener(
-        topics = "${instrument.topics.main}",
+        topics = {
+            "${instrument.topics.equity-issue}",
+            "${instrument.topics.equity-trading-line}",
+            "${instrument.topics.bond-issue}",
+            "${instrument.topics.bond-trading-line}",
+            "${instrument.topics.structured-product-issue}",
+            "${instrument.topics.structured-product-trading-line}",
+            "${instrument.topics.warrant-issue}",
+            "${instrument.topics.warrant-trading-line}"
+        },
         groupId = "${spring.kafka.consumer.group-id}",
         containerFactory = "kafkaListenerContainerFactory"
     )
-    public void listenMain(ConsumerRecord<String, InstrumentUpdateMessage> record, 
-                          Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "main");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[0]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenPricing(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                             Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "pricing");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[1]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenQuantity(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                              Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "quantity");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[2]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenIssuer(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                            Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "issuer");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[3]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenSector(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                            Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "sector");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[4]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenRisk(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                          Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "risk");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[5]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenMaturity(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                              Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "maturity");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[6]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenCoupon(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                            Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "coupon");
-    }
-
-    @KafkaListener(
-        topics = "#{${instrument.topics.supplementary}[7]}",
-        groupId = "${spring.kafka.consumer.group-id}",
-        containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void listenMarket(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                            Acknowledgment acknowledgment) {
-        processMessage(record, acknowledgment, "market");
-    }
-
-    private void processMessage(ConsumerRecord<String, InstrumentUpdateMessage> record,
-                               Acknowledgment acknowledgment,
-                               String source) {
+    public void listen(ConsumerRecord<String, String> record, Acknowledgment acknowledgment) {
         long startTime = System.currentTimeMillis();
-        InstrumentUpdateMessage message = record.value();
-        
-        // Set correlation ID if not present
-        if (message.getCorrelationId() == null) {
-            message.setCorrelationId(UUID.randomUUID().toString());
-        }
-        
-        // Set source
-        message.setSource(source);
         
         try {
-            MDC.put("correlationId", message.getCorrelationId());
-            MDC.put("instrumentId", message.getInstrumentId());
-            MDC.put("version", String.valueOf(message.getVersion()));
-            MDC.put("source", source);
+            // Extract metadata from ConsumerRecord
+            String topic = record.topic();
+            String xmlContent = record.value();
+            String key = record.key();
+            long offset = record.offset();
+            int partition = record.partition();
             
-            log.debug("Received message: topic={}, partition={}, offset={}, key={}", 
-                record.topic(), record.partition(), record.offset(), record.key());
+            log.debug("Received XML message: topic={}, partition={}, offset={}, size={} bytes", 
+                topic, partition, offset, xmlContent != null ? xmlContent.length() : 0);
             
-            // Process message through aggregation service
-            aggregationService.processMessage(message);
+            // Create raw message
+            RawMessage rawMessage = new RawMessage(xmlContent, topic, offset, partition, key);
             
-            // Acknowledge only after successful processing
-            acknowledgment.acknowledge();
+            // Submit to pre-transform queue
+            // This is a blocking operation with timeout if queue is full
+            boolean submitted = preTransformQueue.submit(rawMessage);
             
-            long duration = System.currentTimeMillis() - startTime;
-            meterRegistry.timer("kafka.message.processing.time",
-                "topic", record.topic(),
-                "source", source
-            ).record(duration, java.util.concurrent.TimeUnit.MILLISECONDS);
-            
-            meterRegistry.counter("kafka.message.received",
-                "topic", record.topic(),
-                "source", source
-            ).increment();
-            
-            log.debug("Message processed successfully: source={}, duration={}ms", 
-                source, duration);
+            if (submitted) {
+                // Acknowledge Kafka immediately after successful queue submission
+                acknowledgment.acknowledge();
+                
+                long duration = System.currentTimeMillis() - startTime;
+                
+                meterRegistry.timer("kafka.message.ingestion.time",
+                    "topic", topic
+                ).record(duration, java.util.concurrent.TimeUnit.MILLISECONDS);
+                
+                meterRegistry.counter("kafka.message.received",
+                    "topic", topic
+                ).increment();
+                
+                log.debug("Message queued successfully: topic={}, duration={}ms", topic, duration);
+            } else {
+                // Queue rejected the message (should not happen with blocking queue)
+                log.error("Failed to submit message to pre-transform queue: topic={}, offset={}", 
+                    topic, offset);
+                
+                meterRegistry.counter("kafka.message.queue.rejected",
+                    "topic", topic
+                ).increment();
+                
+                // Don't acknowledge - will be redelivered
+                throw new RuntimeException("Pre-transform queue rejected message");
+            }
             
         } catch (Exception e) {
-            log.error("Error processing message from source: {}", source, e);
+            log.error("Error processing Kafka message: topic={}, partition={}, offset={}", 
+                record.topic(), record.partition(), record.offset(), e);
             
-            meterRegistry.counter("kafka.message.processing.errors",
+            meterRegistry.counter("kafka.message.ingestion.errors",
                 "topic", record.topic(),
-                "source", source,
                 "error", e.getClass().getSimpleName()
             ).increment();
             
             // Don't acknowledge - message will be redelivered
             throw e;
-            
-        } finally {
-            MDC.clear();
         }
     }
 }
