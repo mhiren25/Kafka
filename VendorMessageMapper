@@ -1,0 +1,290 @@
+package com.example.instrument.service;
+
+import com.example.instrument.domain.*;
+import com.example.instrument.dto.TransformedMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+
+/**
+ * Service to map vendor message objects to our domain entities
+ * Uses instanceof to determine vendor message type and extracts fields
+ */
+@Service
+public class VendorMessageMapper {
+    
+    private static final Logger log = LoggerFactory.getLogger(VendorMessageMapper.class);
+
+    /**
+     * Map vendor message to Issue entity
+     */
+    public Issue mapToIssue(TransformedMessage transformedMessage) {
+        Issue issue = new Issue();
+        issue.setInstrumentId(transformedMessage.getInstrumentId());
+        issue.setVersion(transformedMessage.getVersion());
+        issue.setInstrumentType(transformedMessage.getInstrumentType());
+        issue.setCorrelationId(transformedMessage.getCorrelationId());
+        issue.setStatus(RecordStatus.ACTIVE);
+        
+        Object vendorMsg = transformedMessage.getVendorMessage();
+        
+        if (vendorMsg instanceof com.vendor.instruments.equity.EquityMessage) {
+            mapEquityToIssue(issue, (com.vendor.instruments.equity.EquityMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.bond.BondMessage) {
+            mapBondToIssue(issue, (com.vendor.instruments.bond.BondMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.structuredproduct.StructuredProductMessage) {
+            mapStructuredProductToIssue(issue, (com.vendor.instruments.structuredproduct.StructuredProductMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.warrant.WarrantMessage) {
+            mapWarrantToIssue(issue, (com.vendor.instruments.warrant.WarrantMessage) vendorMsg);
+        }
+        
+        return issue;
+    }
+
+    /**
+     * Update existing Issue entity from vendor message
+     */
+    public void updateIssue(Issue issue, TransformedMessage transformedMessage) {
+        issue.setVersion(transformedMessage.getVersion());
+        issue.setCorrelationId(transformedMessage.getCorrelationId());
+        issue.setUpdatedAt(LocalDateTime.now());
+        
+        Object vendorMsg = transformedMessage.getVendorMessage();
+        
+        if (vendorMsg instanceof com.vendor.instruments.equity.EquityMessage) {
+            mapEquityToIssue(issue, (com.vendor.instruments.equity.EquityMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.bond.BondMessage) {
+            mapBondToIssue(issue, (com.vendor.instruments.bond.BondMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.structuredproduct.StructuredProductMessage) {
+            mapStructuredProductToIssue(issue, (com.vendor.instruments.structuredproduct.StructuredProductMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.warrant.WarrantMessage) {
+            mapWarrantToIssue(issue, (com.vendor.instruments.warrant.WarrantMessage) vendorMsg);
+        }
+    }
+
+    /**
+     * Map vendor message to Listing entity
+     */
+    public Listing mapToListing(TransformedMessage transformedMessage) {
+        Listing listing = new Listing();
+        listing.setInstrumentId(transformedMessage.getInstrumentId());
+        listing.setVersion(transformedMessage.getVersion());
+        listing.setInstrumentType(transformedMessage.getInstrumentType());
+        listing.setCorrelationId(transformedMessage.getCorrelationId());
+        listing.setStatus(RecordStatus.ACTIVE);
+        
+        Object vendorMsg = transformedMessage.getVendorMessage();
+        
+        // All vendor messages have trading line data
+        if (vendorMsg instanceof com.vendor.instruments.equity.EquityMessage) {
+            mapEquityToListing(listing, (com.vendor.instruments.equity.EquityMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.bond.BondMessage) {
+            mapBondToListing(listing, (com.vendor.instruments.bond.BondMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.structuredproduct.StructuredProductMessage) {
+            mapStructuredProductToListing(listing, (com.vendor.instruments.structuredproduct.StructuredProductMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.warrant.WarrantMessage) {
+            mapWarrantToListing(listing, (com.vendor.instruments.warrant.WarrantMessage) vendorMsg);
+        }
+        
+        return listing;
+    }
+
+    /**
+     * Update existing Listing entity
+     */
+    public void updateListing(Listing listing, TransformedMessage transformedMessage) {
+        listing.setVersion(transformedMessage.getVersion());
+        listing.setCorrelationId(transformedMessage.getCorrelationId());
+        listing.setUpdatedAt(LocalDateTime.now());
+        
+        Object vendorMsg = transformedMessage.getVendorMessage();
+        
+        if (vendorMsg instanceof com.vendor.instruments.equity.EquityMessage) {
+            mapEquityToListing(listing, (com.vendor.instruments.equity.EquityMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.bond.BondMessage) {
+            mapBondToListing(listing, (com.vendor.instruments.bond.BondMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.structuredproduct.StructuredProductMessage) {
+            mapStructuredProductToListing(listing, (com.vendor.instruments.structuredproduct.StructuredProductMessage) vendorMsg);
+        } else if (vendorMsg instanceof com.vendor.instruments.warrant.WarrantMessage) {
+            mapWarrantToListing(listing, (com.vendor.instruments.warrant.WarrantMessage) vendorMsg);
+        }
+    }
+
+    /**
+     * Map vendor message to BondChar entity
+     */
+    public BondChar mapToBondChar(TransformedMessage transformedMessage) {
+        BondChar bondChar = new BondChar();
+        bondChar.setInstrumentId(transformedMessage.getInstrumentId());
+        bondChar.setVersion(transformedMessage.getVersion());
+        bondChar.setCorrelationId(transformedMessage.getCorrelationId());
+        bondChar.setStatus(RecordStatus.ACTIVE);
+        
+        Object vendorMsg = transformedMessage.getVendorMessage();
+        
+        if (vendorMsg instanceof com.vendor.instruments.bond.BondMessage) {
+            mapBondToBondChar(bondChar, (com.vendor.instruments.bond.BondMessage) vendorMsg);
+        }
+        
+        return bondChar;
+    }
+
+    /**
+     * Update existing BondChar entity
+     */
+    public void updateBondChar(BondChar bondChar, TransformedMessage transformedMessage) {
+        bondChar.setVersion(transformedMessage.getVersion());
+        bondChar.setCorrelationId(transformedMessage.getCorrelationId());
+        bondChar.setUpdatedAt(LocalDateTime.now());
+        
+        Object vendorMsg = transformedMessage.getVendorMessage();
+        
+        if (vendorMsg instanceof com.vendor.instruments.bond.BondMessage) {
+            mapBondToBondChar(bondChar, (com.vendor.instruments.bond.BondMessage) vendorMsg);
+        }
+    }
+
+    /**
+     * Check if vendor message has listing data
+     */
+    public boolean hasListingData(Object vendorMessage) {
+        // Check if vendor message has non-null trading line fields
+        try {
+            Object exchangeCode = vendorMessage.getClass().getMethod("getExchangeCode").invoke(vendorMessage);
+            return exchangeCode != null;
+        } catch (Exception e) {
+            log.debug("Could not check for listing data", e);
+            return false;
+        }
+    }
+
+    /**
+     * Check if vendor message has bond characteristics data
+     */
+    public boolean hasBondCharData(Object vendorMessage) {
+        if (!(vendorMessage instanceof com.vendor.instruments.bond.BondMessage)) {
+            return false;
+        }
+        
+        try {
+            com.vendor.instruments.bond.BondMessage bondMsg = 
+                (com.vendor.instruments.bond.BondMessage) vendorMessage;
+            return bondMsg.getCouponRate() != null;
+        } catch (Exception e) {
+            log.debug("Could not check for bond char data", e);
+            return false;
+        }
+    }
+
+    // Private mapping methods
+
+    private void mapEquityToIssue(Issue issue, com.vendor.instruments.equity.EquityMessage msg) {
+        issue.setName(msg.getName());
+        issue.setIsin(msg.getIsin());
+        issue.setCurrency(msg.getCurrency());
+        issue.setIssuer(msg.getIssuer());
+        issue.setIssueDate(msg.getIssueDate());
+        issue.setNominalValue(msg.getNominalValue());
+        issue.setCountry(msg.getCountry());
+    }
+
+    private void mapBondToIssue(Issue issue, com.vendor.instruments.bond.BondMessage msg) {
+        issue.setName(msg.getName());
+        issue.setIsin(msg.getIsin());
+        issue.setCurrency(msg.getCurrency());
+        issue.setIssuer(msg.getIssuer());
+        issue.setIssueDate(msg.getIssueDate());
+        issue.setMaturityDate(msg.getMaturityDate());
+        issue.setNominalValue(msg.getNominalValue());
+        issue.setCountry(msg.getCountry());
+    }
+
+    private void mapStructuredProductToIssue(Issue issue, 
+            com.vendor.instruments.structuredproduct.StructuredProductMessage msg) {
+        issue.setName(msg.getName());
+        issue.setIsin(msg.getIsin());
+        issue.setCurrency(msg.getCurrency());
+        issue.setIssuer(msg.getIssuer());
+        issue.setIssueDate(msg.getIssueDate());
+        issue.setMaturityDate(msg.getMaturityDate());
+        issue.setNominalValue(msg.getNominalValue());
+        issue.setCountry(msg.getCountry());
+    }
+
+    private void mapWarrantToIssue(Issue issue, com.vendor.instruments.warrant.WarrantMessage msg) {
+        issue.setName(msg.getName());
+        issue.setIsin(msg.getIsin());
+        issue.setCurrency(msg.getCurrency());
+        issue.setIssuer(msg.getIssuer());
+        issue.setIssueDate(msg.getIssueDate());
+        issue.setMaturityDate(msg.getMaturityDate());
+        issue.setNominalValue(msg.getNominalValue());
+        issue.setCountry(msg.getCountry());
+    }
+
+    private void mapEquityToListing(Listing listing, com.vendor.instruments.equity.EquityMessage msg) {
+        listing.setExchangeCode(msg.getExchangeCode());
+        listing.setTradingSymbol(msg.getTradingSymbol());
+        listing.setLastPrice(msg.getLastPrice());
+        listing.setVolume(msg.getVolume());
+        listing.setTradingStatus(msg.getTradingStatus());
+        listing.setListingDate(msg.getListingDate());
+        listing.setTickSize(msg.getTickSize());
+        listing.setLotSize(msg.getLotSize());
+        listing.setMarketSegment(msg.getMarketSegment());
+    }
+
+    private void mapBondToListing(Listing listing, com.vendor.instruments.bond.BondMessage msg) {
+        listing.setExchangeCode(msg.getExchangeCode());
+        listing.setTradingSymbol(msg.getTradingSymbol());
+        listing.setLastPrice(msg.getLastPrice());
+        listing.setVolume(msg.getVolume());
+        listing.setTradingStatus(msg.getTradingStatus());
+        listing.setListingDate(msg.getListingDate());
+        listing.setTickSize(msg.getTickSize());
+        listing.setLotSize(msg.getLotSize());
+        listing.setMarketSegment(msg.getMarketSegment());
+    }
+
+    private void mapStructuredProductToListing(Listing listing, 
+            com.vendor.instruments.structuredproduct.StructuredProductMessage msg) {
+        listing.setExchangeCode(msg.getExchangeCode());
+        listing.setTradingSymbol(msg.getTradingSymbol());
+        listing.setLastPrice(msg.getLastPrice());
+        listing.setVolume(msg.getVolume());
+        listing.setTradingStatus(msg.getTradingStatus());
+        listing.setListingDate(msg.getListingDate());
+        listing.setTickSize(msg.getTickSize());
+        listing.setLotSize(msg.getLotSize());
+        listing.setMarketSegment(msg.getMarketSegment());
+    }
+
+    private void mapWarrantToListing(Listing listing, com.vendor.instruments.warrant.WarrantMessage msg) {
+        listing.setExchangeCode(msg.getExchangeCode());
+        listing.setTradingSymbol(msg.getTradingSymbol());
+        listing.setLastPrice(msg.getLastPrice());
+        listing.setVolume(msg.getVolume());
+        listing.setTradingStatus(msg.getTradingStatus());
+        listing.setListingDate(msg.getListingDate());
+        listing.setTickSize(msg.getTickSize());
+        listing.setLotSize(msg.getLotSize());
+        listing.setMarketSegment(msg.getMarketSegment());
+    }
+
+    private void mapBondToBondChar(BondChar bondChar, com.vendor.instruments.bond.BondMessage msg) {
+        bondChar.setCouponRate(msg.getCouponRate());
+        bondChar.setCouponType(msg.getCouponType());
+        bondChar.setCouponFrequency(msg.getCouponFrequency());
+        bondChar.setNextCouponDate(msg.getNextCouponDate());
+        bondChar.setYieldToMaturity(msg.getYieldToMaturity());
+        bondChar.setRatingMoody(msg.getRatingMoody());
+        bondChar.setRatingSP(msg.getRatingSP());
+        bondChar.setRatingFitch(msg.getRatingFitch());
+        bondChar.setSeniority(msg.getSeniority());
+        bondChar.setCallable(msg.getCallable());
+        bondChar.setCallDate(msg.getCallDate());
+        bondChar.setCallPrice(msg.getCallPrice());
+    }
+}
